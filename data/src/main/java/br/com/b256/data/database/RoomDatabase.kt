@@ -1,9 +1,12 @@
 package br.com.b256.data.database
 
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import br.com.b256.data.database.dao.PhotoDao
 import br.com.b256.data.database.dao.TelemetryDao
+import br.com.b256.data.database.entities.PhotoEntity
 import br.com.b256.data.database.entities.TelemetryEntity
 import br.com.b256.data.database.util.InstantConverter
 
@@ -16,9 +19,11 @@ import br.com.b256.data.database.util.InstantConverter
  * (`exportSchema = true`) fica em `data/schemas` e é o que valida migrações em tempo de build.
  */
 @Database(
-    version = 1,
-    entities = [TelemetryEntity::class],
-    autoMigrations = [],
+    version = 2,
+    entities = [TelemetryEntity::class, PhotoEntity::class],
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2),
+    ],
     exportSchema = true,
 )
 @TypeConverters(
@@ -26,4 +31,6 @@ import br.com.b256.data.database.util.InstantConverter
 )
 internal abstract class RoomDatabase() : RoomDatabase() {
     abstract fun telemetryDao(): TelemetryDao
+
+    abstract fun photoDao(): PhotoDao
 }

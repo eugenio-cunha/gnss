@@ -43,4 +43,19 @@
     <string name="presentation_skyplot_status_fix_acquired">Fix Acquired</string>
     <string name="presentation_skyplot_status_acquiring">Acquiring Signal</string>
     <string name="presentation_skyplot_status_no_signal">No Signal</string>
+
+    <string name="presentation_skyplot_speed">Speed</string>
+    <string name="presentation_skyplot_bearing">Bearing</string>
+
+    <string name="presentation_skyplot_camera">Photograph position</string>
+    <string name="presentation_skyplot_photo_heading">GNSS SKYPLOT</string>
+    <string name="presentation_skyplot_photo_saved">Photo saved to the gallery</string>
+    <string name="presentation_skyplot_photo_error">Could not save the photo</string>
+    <string name="presentation_skyplot_photo_no_location">Waiting for a position fix to take the photo</string>
+    <string name="presentation_skyplot_photo_share_title">Share photo</string>
+    <string name="presentation_skyplot_photos">Photos</string>
+    <string name="presentation_skyplot_photos_empty">No photos yet — tap the camera to capture the current position</string>
+    <string name="presentation_skyplot_photo_open">Open photo</string>
+    <string name="presentation_skyplot_photo_remove">Remove from list</string>
+    <string name="presentation_skyplot_photo_viewer_close">Close</string>
 </resources>

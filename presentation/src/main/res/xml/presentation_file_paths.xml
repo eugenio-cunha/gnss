@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Arquivos temporários das capturas de câmera, antes de serem compostos e publicados. -->
+    <cache-path
+        name="camera"
+        path="camera/" />
+</paths>

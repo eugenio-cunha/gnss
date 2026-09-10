@@ -3,6 +3,7 @@ package br.com.b256.data.di
 import android.content.Context
 import androidx.room.Room
 import br.com.b256.data.database.RoomDatabase
+import br.com.b256.data.database.dao.PhotoDao
 import br.com.b256.data.database.dao.TelemetryDao
 import dagger.Module
 import dagger.Provides
@@ -37,4 +38,7 @@ internal object DatabaseModule {
 internal object DaoModule {
     @Provides
     fun providesTelemetryDao(database: RoomDatabase): TelemetryDao = database.telemetryDao()
+
+    @Provides
+    fun providesPhotoDao(database: RoomDatabase): PhotoDao = database.photoDao()
 }
