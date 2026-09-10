@@ -3,6 +3,10 @@ package br.com.b256.presentation.skyplot
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -10,8 +14,10 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +33,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +56,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -57,12 +68,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import br.com.b256.domain.entities.GnssInfo
 import br.com.b256.domain.entities.GnssSatellite
 import br.com.b256.domain.entities.GpsLocation
 import br.com.b256.domain.entities.Orientation
+import br.com.b256.domain.entities.Photo
+import br.com.b256.domain.entities.TitleBlock
 import br.com.b256.domain.entities.enums.Datum
 import br.com.b256.presentation.R
 import br.com.b256.presentation.designsystem.asset.Asset
@@ -76,9 +91,14 @@ import br.com.b256.presentation.designsystem.theme.PaddingSingle
 import br.com.b256.presentation.designsystem.theme.PaddingTreble
 import br.com.b256.presentation.settings.SettingsDialog
 import br.com.b256.presentation.skyplot.components.GnssSkyPlot
+import br.com.b256.presentation.skyplot.components.PhotoViewerDialog
+import br.com.b256.presentation.skyplot.components.rememberImageBitmap
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 /**
@@ -93,16 +113,90 @@ internal fun SkyPlotScreen(
     val gnssState by viewModel.gnssStatus.collectAsStateWithLifecycle()
     val locationState by viewModel.locationState.collectAsStateWithLifecycle()
     val orientationState by viewModel.orientation.collectAsStateWithLifecycle()
+    val photoState by viewModel.photoState.collectAsStateWithLifecycle()
+    val photos by viewModel.photos.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
 
     LocationPermissionEffect {
         viewModel.refresh()
     }
 
+    // O URI de destino e o title block são fixados no momento em que a câmera é disparada e lidos
+    // de volta quando ela retorna — a foto reflete a posição de quando o usuário tocou no botão.
+    var pendingCaptureUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingTitleBlock by remember { mutableStateOf<TitleBlock?>(null) }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+    ) { success ->
+        val uri = pendingCaptureUri
+        val titleBlock = pendingTitleBlock
+        pendingCaptureUri = null
+        pendingTitleBlock = null
+        if (success && uri != null && titleBlock != null) {
+            viewModel.onPhotoCaptured(sourceUri = uri.toString(), titleBlock = titleBlock)
+        }
+    }
+
+    PhotoResultEffect(
+        photoState = photoState,
+        onConsumed = viewModel::onPhotoResultConsumed,
+    )
+
     SkyPlotScreen(
         locationState = locationState,
         gnssState = gnssState,
         orientationState = orientationState,
+        photos = photos,
+        isSavingPhoto = photoState is PhotoUiState.Saving,
+        onCapturePhoto = { titleBlock ->
+            val uri = createCaptureUri(context)
+            pendingCaptureUri = uri
+            pendingTitleBlock = titleBlock
+            cameraLauncher.launch(uri)
+        },
+        onCaptureUnavailable = viewModel::onCaptureWithoutLocation,
+        onPhotoRemove = viewModel::onRemovePhoto,
     )
+}
+
+/**
+ * Reage ao resultado da captura de foto ([PhotoUiState]): exibe um `Toast` de confirmação ou erro.
+ * A foto recém-salva entra na lista de pré-visualização; o compartilhamento fica disponível no
+ * visualizador em tela cheia. Sempre chama [onConsumed] para o `ViewModel` voltar ao estado ocioso.
+ */
+@Composable
+private fun PhotoResultEffect(
+    photoState: PhotoUiState,
+    onConsumed: () -> Unit,
+) {
+    val context = LocalContext.current
+
+    LaunchedEffect(photoState) {
+        when (photoState) {
+            is PhotoUiState.Saved -> {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.presentation_skyplot_photo_saved),
+                    Toast.LENGTH_LONG,
+                ).show()
+                onConsumed()
+            }
+
+            is PhotoUiState.Error -> {
+                val message = if (photoState.hasLocation) {
+                    R.string.presentation_skyplot_photo_error
+                } else {
+                    R.string.presentation_skyplot_photo_no_location
+                }
+                Toast.makeText(context, context.getString(message), Toast.LENGTH_LONG).show()
+                onConsumed()
+            }
+
+            else -> Unit
+        }
+    }
 }
 
 /**
@@ -126,12 +220,41 @@ internal fun SkyPlotScreen(
     gnssState: GnssInfo?,
     locationState: GpsLocation?,
     orientationState: Orientation?,
+    photos: List<Photo> = emptyList(),
+    isSavingPhoto: Boolean = false,
+    onCapturePhoto: (TitleBlock) -> Unit = {},
+    onCaptureUnavailable: () -> Unit = {},
+    onPhotoRemove: (String) -> Unit = {},
 ) {
     val locale = LocalConfiguration.current.locales[0]
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var fullScreenPhoto by remember { mutableStateOf<Photo?>(null) }
+
+    val captureTitleBlock = rememberCaptureTitleBlock(locationState)
 
     if (showSettingsDialog) {
         SettingsDialog(onDismiss = { showSettingsDialog = false })
+    }
+
+    // Uma foto removida da lista enquanto está aberta em tela cheia fecha o visualizador.
+    LaunchedEffect(photos) {
+        if (fullScreenPhoto != null && photos.none { it.uri == fullScreenPhoto?.uri }) {
+            fullScreenPhoto = null
+        }
+    }
+
+    fullScreenPhoto?.let { photo ->
+        val context = LocalContext.current
+        val shareTitle = stringResource(R.string.presentation_skyplot_photo_share_title)
+        PhotoViewerDialog(
+            photo = photo,
+            onDismiss = { fullScreenPhoto = null },
+            onShare = { sharePhoto(context, photo.uri.toUri(), shareTitle) },
+            onRemove = {
+                onPhotoRemove(photo.uri)
+                fullScreenPhoto = null
+            },
+        )
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -150,12 +273,23 @@ internal fun SkyPlotScreen(
 
             item(key = "location") {
                 if (locationState != null) {
-                    Location(
-                        locationState = locationState,
-                    )
+                    Location(locationState = locationState)
                 } else {
                     LocationSkeleton()
                 }
+            }
+
+            item(key = "photos") {
+                CapturedPhotos(
+                    photos = photos,
+                    isSavingPhoto = isSavingPhoto,
+                    onCapture = {
+                        val titleBlock = captureTitleBlock()
+                        if (titleBlock != null) onCapturePhoto(titleBlock) else onCaptureUnavailable()
+                    },
+                    onPhotoClick = { fullScreenPhoto = it },
+                    onPhotoRemove = onPhotoRemove,
+                )
             }
 
             item(key = "skyplot") {
@@ -781,8 +915,8 @@ private fun SatelliteRow(
 
 /**
  * Painel com os detalhes da localização atual: coordenadas geográficas (latitude/longitude),
- * coordenadas UTM (zona, easting, northing), altitude e precisão. Também expõe um botão para
- * compartilhar esses dados como texto via [share].
+ * coordenadas UTM (zona, easting, northing), altitude e precisão. Expõe um botão para compartilhar
+ * esses dados como texto via [share].
  *
  * Não renderiza nada caso [locationState] seja `null`.
  *
@@ -972,6 +1106,217 @@ private fun LocationInfoItem(
 }
 
 /**
+ * Constrói uma função que monta o "title block" (localizado) da posição atual — os dados que serão
+ * desenhados sobre a foto. A função devolvida retorna `null` enquanto não há um fix ([location]
+ * nulo).
+ *
+ * As strings são lidas aqui (contexto Composable); a função devolvida apenas as formata com os
+ * valores atuais no momento em que o usuário toca no botão de captura.
+ *
+ * @param location Posição atual, ou `null` se ainda não há fix.
+ */
+@Composable
+private fun rememberCaptureTitleBlock(location: GpsLocation?): () -> TitleBlock? {
+    val locale = LocalConfiguration.current.locales[0]
+
+    val heading = stringResource(R.string.presentation_skyplot_photo_heading)
+    val latLabel = stringResource(R.string.presentation_skyplot_latitude)
+    val lonLabel = stringResource(R.string.presentation_skyplot_longitude)
+    val zoneLabel = stringResource(R.string.presentation_skyplot_zone)
+    val eastingLabel = stringResource(R.string.presentation_skyplot_easting)
+    val northingLabel = stringResource(R.string.presentation_skyplot_northing)
+    val altitudeLabel = stringResource(R.string.presentation_skyplot_altitude)
+    val accuracyLabel = stringResource(R.string.presentation_skyplot_accuracy)
+    val speedLabel = stringResource(R.string.presentation_skyplot_speed)
+    val bearingLabel = stringResource(R.string.presentation_skyplot_bearing)
+    val datumTag = stringResource(R.string.presentation_settings_datum)
+    val datumLabel = stringResource(datumLabelRes(location?.utm?.datum ?: Datum.WGS84))
+
+    return {
+        location?.let { fix ->
+            val timestamp = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", locale)
+                .format(Date(fix.date.toEpochMilliseconds()))
+            val lines = buildList {
+                add(timestamp)
+                add("$latLabel ${String.format(locale, "%.6f", fix.latitude)}°")
+                add("$lonLabel ${String.format(locale, "%.6f", fix.longitude)}°")
+                add("$datumTag: $datumLabel")
+                add("$zoneLabel ${fix.utm.zone}")
+                add("$eastingLabel ${fix.utm.easting}")
+                add("$northingLabel ${fix.utm.northing}")
+                add("MC ${fix.utm.centralMeridian}")
+                fix.altitude?.let { add("$altitudeLabel ${String.format(locale, "%.2f", it)} m") }
+                fix.accuracy?.let { add("$accuracyLabel ±${String.format(locale, "%.1f", it)} m") }
+                fix.speed?.let { add("$speedLabel ${String.format(locale, "%.1f", it)} m/s") }
+                fix.bearing?.let { add("$bearingLabel ${String.format(locale, "%.0f", it)}°") }
+            }
+            TitleBlock(heading = heading, lines = lines)
+        }
+    }
+}
+
+/**
+ * Painel com a lista horizontal ([LazyRow]) das fotos já capturadas, exibido logo abaixo do painel
+ * de posição e **sempre visível** — mesmo sem fotos. É aqui que fica o botão de câmera. As fotos
+ * vêm da mais recente para a mais antiga, então toda nova captura entra no índice 0 e a lista rola
+ * automaticamente para o começo para deixá-la visível.
+ *
+ * @param photos Fotos a listar (mais recente primeiro).
+ * @param isSavingPhoto `true` enquanto a foto capturada está sendo composta/gravada.
+ * @param onCapture Chamado ao tocar no botão de câmera.
+ * @param onPhotoClick Chamado ao tocar numa miniatura — abre a visualização em tela cheia.
+ * @param onPhotoRemove Chamado ao tocar no "x" de uma miniatura — remove-a da lista.
+ * @param modifier [Modifier] aplicado ao [MissionPanel] raiz.
+ */
+@Composable
+private fun CapturedPhotos(
+    photos: List<Photo>,
+    isSavingPhoto: Boolean,
+    onCapture: () -> Unit,
+    onPhotoClick: (Photo) -> Unit,
+    onPhotoRemove: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(photos.firstOrNull()?.uri) {
+        if (photos.isNotEmpty()) {
+            listState.animateScrollToItem(0)
+        }
+    }
+
+    MissionPanel(
+        title = stringResource(R.string.presentation_skyplot_photos),
+        modifier = modifier,
+        trailing = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (photos.isNotEmpty()) {
+                    Text(
+                        text = photos.size.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (isSavingPhoto) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(IconTreble)
+                            .padding(PaddingSingle),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    IconButton(
+                        onClick = onCapture,
+                        modifier = Modifier.size(IconTreble),
+                    ) {
+                        Icon(
+                            imageVector = Asset.Camera,
+                            contentDescription = stringResource(
+                                R.string.presentation_skyplot_camera,
+                            ),
+                            modifier = Modifier.size(IconDouble),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        },
+    ) {
+        if (photos.isEmpty()) {
+            Text(
+                text = stringResource(R.string.presentation_skyplot_photos_empty),
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            LazyRow(
+                state = listState,
+                horizontalArrangement = Arrangement.spacedBy(PaddingSingle),
+            ) {
+                items(items = photos, key = { it.uri }) { photo ->
+                    PhotoThumbnail(
+                        photo = photo,
+                        onClick = { onPhotoClick(photo) },
+                        onRemove = { onPhotoRemove(photo.uri) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Miniatura quadrada de uma [Photo] dentro de [CapturedPhotos]: a imagem (carregada sob demanda
+ * por [rememberImageBitmap]) com um botão "x" sobreposto no canto superior direito para removê-la
+ * da lista. Tocar na imagem dispara [onClick].
+ *
+ * @param photo Foto a exibir.
+ * @param onClick Chamado ao tocar na miniatura.
+ * @param onRemove Chamado ao tocar no botão de remover.
+ */
+@Composable
+private fun PhotoThumbnail(
+    photo: Photo,
+    onClick: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    val shape = MaterialTheme.shapes.small
+    val image = rememberImageBitmap(uri = photo.uri, maxPx = 320)
+
+    Box {
+        Box(
+            modifier = Modifier
+                .size(96.dp)
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                .border(
+                    width = BorderHalf,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                    shape = shape,
+                )
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (image != null) {
+                Image(
+                    bitmap = image,
+                    contentDescription = stringResource(R.string.presentation_skyplot_photo_open),
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize(),
+                )
+            } else {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(IconDouble),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(PaddingHalf)
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.55f))
+                .clickable(onClick = onRemove),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Asset.Close,
+                contentDescription = stringResource(R.string.presentation_skyplot_photo_remove),
+                modifier = Modifier.size(14.dp),
+                tint = Color.White,
+            )
+        }
+    }
+}
+
+/**
  * Função Composable que lida com as solicitações de permissão de localização.
  *
  * Esta função verifica as permissões de localização necessárias (ACCESS_FINE_LOCATION,
@@ -1031,6 +1376,41 @@ private fun share(context: Context, value: String) {
     }
 
     Intent.createChooser(sendIntent, null).also {
+        context.startActivity(it)
+    }
+}
+
+/**
+ * Cria um arquivo temporário em `cacheDir/camera/` e devolve um `content://` URI gravável para ele,
+ * via [FileProvider] (autoridade `${applicationId}.fileprovider`, declarada no `AndroidManifest` do
+ * módulo `:presentation`). É esse URI que é entregue ao app de câmera para receber a captura.
+ *
+ * @param context [Context] usado para resolver o `cacheDir` e o [FileProvider].
+ */
+private fun createCaptureUri(context: Context): Uri {
+    val directory = File(context.cacheDir, "camera").apply { mkdirs() }
+    // As capturas são sequenciais e a anterior já foi processada e publicada — limpa os temporários.
+    directory.listFiles()?.forEach { it.delete() }
+    val file = File.createTempFile("capture_", ".jpg", directory)
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+}
+
+/**
+ * Abre a folha de compartilhamento nativa do Android para a imagem [uri] (JPEG), concedendo
+ * permissão de leitura temporária ao app escolhido pelo usuário.
+ *
+ * @param context [Context] usado para iniciar a atividade.
+ * @param uri URI público (`content://`) da imagem a compartilhar.
+ * @param title Título exibido no seletor de apps.
+ */
+private fun sharePhoto(context: Context, uri: Uri, title: String) {
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "image/jpeg"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
+    Intent.createChooser(sendIntent, title).also {
         context.startActivity(it)
     }
 }
