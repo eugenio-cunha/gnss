@@ -2,6 +2,9 @@ package br.com.b256.presentation.designsystem.asset
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 
@@ -15,6 +18,9 @@ import androidx.compose.material.icons.outlined.Share
  */
 object Asset {
     val Add = Icons.Outlined.Add
+    val Camera = Icons.Outlined.PhotoCamera
+    val Close = Icons.Outlined.Close
+    val Delete = Icons.Outlined.Delete
     val Settings = Icons.Outlined.Settings
     val Share = Icons.Outlined.Share
 }
