@@ -17,4 +17,7 @@ android {
 dependencies {
     implementation(projects.domain)
     implementation(libs.accompanist.permissions)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.kotlinx.coroutines.core)
 }

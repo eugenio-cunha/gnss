@@ -37,10 +37,12 @@ dependencies {
     implementation(projects.domain)
 
     implementation(libs.geo.coords)
+    implementation(libs.kotlinx.coroutines.core)
     implementation(libs.okhttp.logging)
     implementation(libs.retrofit.core)
     implementation(libs.retrofit.kotlin.serialization)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.exifinterface)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.tracing.ktx)
     implementation(libs.kotlinx.datetime)

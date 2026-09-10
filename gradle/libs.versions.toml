@@ -11,6 +11,7 @@ appcompat = "1.8.0"
 composeBom = "2026.08.00"
 coreKtx = "1.19.0"
 espressoCore = "3.7.0"
+exifinterface = "1.4.0"
 geoCords = "1.0"
 gmsPlugin = "4.4.4"
 hilt = "2.60.1"
@@ -57,6 +58,7 @@ androidx-datastore = { group = "androidx.datastore", name = "datastore", version
 androidx-datastore-core = { group = "androidx.datastore", name = "datastore-core", version.ref = "androidxDataStore" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "androidxDataStore" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
 androidx-hilt-lifecycle-viewModelCompose = { group = "androidx.hilt", name = "hilt-lifecycle-viewmodel-compose", version.ref = "androidxHiltLifecycleViewModelCompose" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
