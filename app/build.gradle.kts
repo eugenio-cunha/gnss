@@ -11,8 +11,8 @@ android {
 
     defaultConfig {
         applicationId = "br.com.b256.utm"
-        versionCode = 50
-        versionName = "1.0.7"
+        versionCode = 52
+        versionName = "1.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -20,8 +20,13 @@ android {
     buildTypes {
         release {
             optimization {
-                enable = false
+                enable = true
             }
+
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }
